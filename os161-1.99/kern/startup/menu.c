@@ -396,6 +396,16 @@ cmd_kheapstats(int nargs, char **args)
 	return 0;
 }
 
+/* Set DB-THREADS as the type of debugging messages displayed*/
+
+static
+int
+cmd_dth()
+{
+	dbflags = 0x0010;
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Menus.
@@ -437,6 +447,7 @@ static const char *opsmenu[] = {
 	"[sync]    Sync filesystems          ",
 	"[panic]   Intentional panic         ",
 	"[q]       Quit and shut down        ",
+	"[dth]     DB-THREADS                ",
 	NULL
 };
 
@@ -535,7 +546,7 @@ static struct {
 	{ "?o",		cmd_opsmenu },
 	{ "?t",		cmd_testmenu },
 
-	/* operations */
+	/* operations */	
 	{ "s",		cmd_shell },
 	{ "p",		cmd_prog },
 	{ "mount",	cmd_mount },
@@ -549,6 +560,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+	{ "dth",        cmd_dth  },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
