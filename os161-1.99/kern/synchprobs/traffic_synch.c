@@ -21,8 +21,14 @@
 /*
  * replace this with declarations of any synchronization and other variables you need here
  */
-static struct semaphore *intersectionSem;
+//static struct semaphore *intersectionSem;
 
+//Number of cars going from ori to des
+static int NumCars[4][4];
+//The lock of intercection that work with all the cvs
+static struct lock *InterLock;
+//Each ori to des has a cv that will check if the car is safe to go(ie satisfies the 3 conditions so that will not collide with other cars in the intersection)
+static struct cv *ODcv[4][4];
 
 /* 
  * The simulation driver will call this function once before starting
@@ -31,16 +37,71 @@ static struct semaphore *intersectionSem;
  * You can use it to initialize synchronization and other variables.
  * 
  */
+
+
+bool
+right_turn(Direction origin, Direction destination);
+bool
+no_collision(Direction o, Direction d);
+
+//helper function: determine if the car is makeing a right turn
+
+bool
+right_turn(Direction origin, Direction destination) {
+  if (((origin == west) && (destination == south)) ||
+      ((origin == south) && (destination == east)) ||
+      ((origin == east) && (destination == north)) ||
+      ((origin == north) && (destination == west))) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+//helper function: determine if the car is safe to go
+
+bool
+no_collision(Direction o, Direction d){
+	for (unsigned int i=0; i<4; ++i){
+		for (unsigned int j=0; j<4; ++j){
+			//compare current car's ori and des with the cars in the intersection
+			if(NumCars[i][j] > 0){
+				// checking the 3 conditions given for safty
+				if((o == i) || 
+                                   (o == j && d == i) || 
+		                   (d != j && right_turn(o,d)) ||
+				   (d != j && i-j == 1) ||
+				   (d != j && i == 0 && j == 3)){
+					continue;}
+				else{ return false;}
+
+			}
+		}
+	}
+	return true;
+}
+
+
+
 void
 intersection_sync_init(void)
 {
-  /* replace this default implementation with your own implementation */
 
-  intersectionSem = sem_create("intersectionSem",1);
-  if (intersectionSem == NULL) {
-    panic("could not create intersection semaphore");
-  }
-  return;
+
+  /* replace this default implementation with your own implementation */
+	InterLock = lock_create("InterLock");
+	if(InterLock == NULL){panic("InterLock init");}
+	
+	for (int i=0; i<4; ++i){
+		for (int j=0; j<4; ++j){
+			NumCars[i][j] = 0;
+
+			ODcv[i][j] = cv_create("ODcv");
+			if(ODcv[i][j] == NULL){panic("ODcv init");}
+		}
+	}
+	return;
+
 }
 
 /* 
@@ -54,8 +115,17 @@ void
 intersection_sync_cleanup(void)
 {
   /* replace this default implementation with your own implementation */
-  KASSERT(intersectionSem != NULL);
-  sem_destroy(intersectionSem);
+	KASSERT(InterLock != NULL);
+	lock_destroy(InterLock);
+
+	for (int i=0; i<4; ++i){
+		for (int j=0; j<4; ++j){
+			
+			KASSERT(ODcv[i][j] != NULL);
+			cv_destroy(ODcv[i][j]);
+		
+		}
+	}
 }
 
 
@@ -76,10 +146,24 @@ void
 intersection_before_entry(Direction origin, Direction destination) 
 {
   /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  P(intersectionSem);
+	
+	//kprintf("%d%d\n",origin,destination);
+
+  KASSERT(InterLock != NULL);
+	lock_acquire(InterLock);
+
+	//block until it is safe to pass
+	while(1){
+		if(no_collision(origin,destination)){
+			++NumCars[origin][destination];
+			lock_release(InterLock);
+			break;
+		}
+		else{
+			cv_wait(ODcv[origin][destination],InterLock);
+		}
+	}
+	//let the car pass
 }
 
 
@@ -97,9 +181,19 @@ intersection_before_entry(Direction origin, Direction destination)
 void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  V(intersectionSem);
+	KASSERT(InterLock != NULL);
+	
+	lock_acquire(InterLock);
+
+	--NumCars[origin][destination];
+
+	for (int i=0; i<4; ++i){
+		for (int j=0; j<4; ++j){
+			
+			cv_broadcast(ODcv[i][j],InterLock);	
+		}
+	}
+	
+	lock_release(InterLock);
+
 }
