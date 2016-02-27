@@ -56,6 +56,11 @@
  */
 struct proc *kproc;
 
+#if OPT_A2
+struct array *procinfotable;
+#endif
+
+
 /*
  * Mechanism for making the kernel menu thread sleep while processes are running
  */
@@ -103,6 +108,16 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+
+#if OPT_A2
+	//proc->pid = NULL;
+	proc->p_waitpid_lock = lock_create(name);
+	if(proc->p_waitpid_lock == NULL){
+		// if can't create the lock, free the memory allocated before!
+		kfree(proc);
+		return NULL;
+	}
+#endif
 	return proc;
 }
 
@@ -166,6 +181,10 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
+	#if OPT_A2
+		lock_destroy(proc->p_waitpid_lock);
+	#endif
+
 	kfree(proc->p_name);
 	kfree(proc);
 
@@ -208,8 +227,32 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#if OPT_A2
+
+//Initialize the process information table
+	procinfotable = array_create();
+	if(procinfotable == NULL){
+		panic("counld not create process information table");
+	}
+#endif
 }
 
+
+#if OPT_A2
+/* Helper function for proc_create_runprogram. Find a free pid*/
+
+int find_pid(void){
+	int pid = -1;
+	for (unsigned int i = 0; i < procinfotable->num; ++i){
+		if(array_get(procinfotable,i) == NULL){
+			pid = i+1;
+			break;		
+		}
+	}
+	return pid;
+}
+#endif
 /*
  * Create a fresh proc for use by runprogram.
  *
@@ -261,6 +304,46 @@ proc_create_runprogram(const char *name)
 	}
 	spinlock_release(&curproc->p_lock);
 #endif // UW
+
+#if OPT_A2
+	struct procinfo *pi = kmalloc(sizeof(struct procinfo));
+	if(pi == NULL){
+		return NULL;
+	}
+	
+	pi->parent_pid = -1;
+	
+	pi->exit_code = -1;
+
+	pi->active = 1;
+
+	
+	pi->waitpid_cv = cv_create("t");
+	if(pi->waitpid_cv == NULL){
+		kfree(pi);
+		return NULL;
+	}
+
+
+
+	unsigned int pid;
+	int newpid = find_pid();
+	if(newpid == -1){
+		if(array_add(procinfotable, pi, &pid)){
+			kfree(pi);
+			return NULL;
+		}
+		proc->pid = pid+1;
+	}
+	else{
+		/*if(array_set(procinfotable, newpid, pi)){
+			kfree(pi);
+			return NULL;
+		}*/
+		array_set(procinfotable, newpid, pi);
+		proc->pid = newpid;
+	}
+#endif
 
 #ifdef UW
 	/* increment the count of processes */

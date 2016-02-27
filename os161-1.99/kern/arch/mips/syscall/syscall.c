@@ -36,7 +36,9 @@
 #include <current.h>
 #include <syscall.h>
 
-
+#include "opt-A2.h"
+#include <proc.h>
+#include <addrspace.h>
 /*
  * System call dispatcher.
  *
@@ -132,7 +134,12 @@ syscall(struct trapframe *tf)
 #endif // UW
 
 	    /* Add stuff here */
- 
+#if OPT_A2
+	case SYS_fork:
+	  err = sys_fork(tf,(int *)&retval);
+	  break;
+#endif
+
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -173,11 +180,30 @@ syscall(struct trapframe *tf)
  *
  * This function is provided as a reminder. You need to write
  * both it and the code that calls it.
- *
- * Thus, you can trash it and do things another way if you prefer.
  */
+#if OPT_A2
+
+
 void
-enter_forked_process(struct trapframe *tf)
-{
-	(void)tf;
+enter_forked_process(void *data1, unsigned long data2){
+  struct trapframe *childtf = ((void **)data1)[0];
+  struct addrspace *childas = ((void **)data1)[1];
+// using local variable to put tf on stack
+  struct trapframe local = *childtf;
+
+// switch to childas
+  curproc_setas(childas);
+  as_activate();
+
+// set register  
+  local.tf_epc += 4;
+  local.tf_v0 = 0;
+  local.tf_a3 = 0;
+  
+  (void)data2;
+  mips_usermode(&local);
 }
+
+
+
+#endif
